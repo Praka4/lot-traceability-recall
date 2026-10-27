@@ -1,89 +1,110 @@
-# Lot Traceability \& Product Recall Simulator
+# Lot Traceability & Product Recall Simulator
 
-A reproducible synthetic supply-chain dataset and recall simulation built with Python and SQLite.
+A reproducible synthetic supply-chain dataset and product recall simulator built with Python and SQLite.
 
 ## Features
 
-* Deterministic synthetic master and transaction data.
-* Suppliers, material lots, products, BOMs, production orders, input consumption, finished lots, customers, shipments, deliveries, inventory, recall cases and recall actions.
-* Forward genealogy from contaminated raw lots to finished lots, shipments and customers.
-* Recall actions for notification, quarantine, recovery and disposition.
-* Four labelled exception scenarios: missing input lot, delivery over production, missed downstream customer, and recalled inventory still available for sale.
-* Ground truth kept separate from operational input data.
-* CSV/JSON exports, SQL database, validation summary and reproducibility checks.
+- Deterministic synthetic data generated from a fixed seed.
+- Supplier, material lot, product, BOM, production, inventory, shipment and customer records.
+- Forward traceability from a recalled raw material lot to affected finished lots, deliveries and customers.
+- Recall actions for customer notification, inventory quarantine, recovery and disposition.
+- Four labelled exception scenarios, including missing genealogy and delivery over production.
+- Separate ground-truth labels for evaluating anomaly detection.
+- SQLite database, CSV/JSON exports, validation reports and reproducibility checks.
+- Automated tests using pytest.
 
 ## Requirements
 
-* Python 3.10+
-* No third-party packages required for generation, validation or simulation.
-* `pytest` is optional for running the tests.
+- Python 3.10 or newer
+- pip
+- pytest for running tests
 
-## Quick start
+## Installation
 
-From this directory:
+Clone the repository and enter its directory:
 
-```bash
-python src/generate.py --out output --seed 20261022 --scale starter
-python src/validate.py --db output/traceability.db --out output
-python src/simulate\_recall.py --db output/traceability.db --out output
-python src/reproducibility.py --seed 20261022 --scale starter
+```powershell
+git clone https://github.com/Praka4/lot-traceability-recall.git
+cd lot-traceability-recall
 ```
 
-For full requested volume:
+Create and activate a virtual environment:
 
-```bash
-python src/generate.py --out output\_full --seed 20261022 --scale full
-python src/validate.py --db output\_full/traceability.db --out output\_full
-python src/simulate\_recall.py --db output\_full/traceability.db --out output\_full
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 ```
 
-`starter` creates a smaller dataset for fast local development. `full` uses 500 suppliers, 10,000 raw lots, 5,000 production orders, 8,000 finished lots and 20,000 deliveries. The same seed and rules are used at both scales.
+If PowerShell blocks virtual environment activation, you can run the Python commands using `.venv\Scripts\python.exe` instead.
 
-## Important data separation
+## Run the project
 
-* Operational tables are stored in `traceability.db` and exported under `output/csv` and `output/json`.
-* `ground\_truth.csv` and `ground\_truth.json` contain planted anomaly labels and are kept separate from operational inputs.
-* Do not use ground-truth fields as model input features when evaluating anomaly detection.
+Run these commands from the repository root, in order:
+
+```powershell
+python src\generate.py --out output --seed 20261022 --scale starter
+python src\simulate_recall.py --db output\traceability.db --out output
+python src\validate.py --db output\traceability.db --out output
+python src\export_recall.py --db output\traceability.db --out output
+python -m pytest -q
+```
+
+To generate the larger dataset, replace `starter` with `full` and use a separate output directory such as `output_full` for every command.
+
+## Verification
+
+The test suite should report six passing tests:
+
+```text
+6 passed
+```
+
+The full dataset's validation previously reported:
+
+- Foreign-key violations: 0
+- Duplicate primary keys: none
+- Date-order violations: 0
+- Consumption exceeding received quantity: 0
+- Planted missing-input-lot issue: 1
+- Planted delivery-over-production issue: 1
+- Available recalled inventory after simulation: 0
+
+The two business-rule issues are deliberate test cases, not unexpected database-integrity failures. The recall simulation quarantines affected inventory; therefore, an inventory issue planted in the input data may no longer be present in the final simulated state.
+
+Results can vary by dataset scale. Inspect the generated validation report and ground-truth files to confirm the actual results for your run.
+
+## Output files
+
+The output directory contains the SQLite database and generated reports/exports, including CSV and JSON data. Exact files depend on the scripts and selected output directory.
+
+Ground-truth labels are separate from operational records. Do not use them as input features when evaluating an anomaly-detection model.
 
 ## Domain assumptions
 
-* Quantities are in units unless a field explicitly says otherwise.
-* Each finished lot has one production order. A production order may consume multiple material lots.
-* The BOM defines the material requirements for a product. Consumption is stored in a bridge table.
-* A shipment may contain multiple finished lots, and a finished lot may be split across multiple shipments.
-* A delivery links a shipment to a customer and finished lot.
-* Recall scope is computed by graph traversal from a trigger lot; it is not randomly assigned.
-* The generator deliberately creates a small number of labelled anomalies after generating a valid baseline. Some anomaly rows intentionally violate normal rules and are identified in ground truth.
-* Effective dates are stored where applicable. Event records are append-only; action history is not overwritten.
+- Quantities are measured in units unless a field says otherwise.
+- A production order can consume multiple material lots.
+- Material consumption connects production orders and material lots.
+- Finished lots can be split across shipments.
+- Recall scope is derived by traversing traceability relationships, rather than being assigned randomly.
+- Synthetic anomalies are deliberately planted and documented in ground truth.
+- Recovery quantities are simulated; they do not represent real-world physical recovery.
 
-## Entity/cardinality overview
+## Documentation
 
-* Supplier 1:N MaterialLot
-* Product 1:N BOM versions; Product 1:N ProductionOrder
-* ProductionOrder N:M MaterialLot through MaterialConsumption
-* ProductionOrder 1:N FinishedLot (the generated baseline uses one finished lot per order where possible)
-* FinishedLot N:M Shipment through ShipmentLine
-* Shipment 1:N Delivery
-* Customer 1:N Delivery
-* RecallCase 1:N RecallAction
-* RecallCase N:M affected lots through RecallScope
-* RecallAction optionally references a lot, customer, shipment or delivery
+- `docs/architecture.md` — system design and data flow.
+- `docs/data_dictionary.md` — fields and data definitions.
+- `docs/AI_USAGE.md` — AI assistance and review summary.
+- `docs/DECISIONS_AND_TESTING.md` — technical decisions, testing and limitations.
 
-## Data dictionary
+The AI usage document is a summary, not a complete verbatim prompt transcript. Any submission requiring prompt history should include the actual relevant prompts and responses as supplementary evidence.
 
-See `docs/data\_dictionary.md` for field types, requiredness, allowed values, units, uniqueness and validation rules.
+## Limitations and future improvements
 
-## Acceptance checks
+- All records are synthetic; this is a simulator, not a production recall platform.
+- Recall and recovery results depend on the generated data and implemented rules.
+- Further improvements could include richer anomaly scenarios, more extensive tests, and automated CI.
 
-1. Primary keys are unique.
-2. Foreign keys are enabled and checked.
-3. Normal rows reconcile across production and distribution.
-4. All planted exceptions are labelled in ground truth.
-5. Recall genealogy is computed from source records.
-6. Notification/quarantine/recovery actions are persisted as events.
-7. Fixed-seed generation is repeatable.
+## Data provenance
 
-## Lawful provenance
-
-All records are synthetic. No personal or confidential data is used. The schema is inspired by common supply-chain traceability concepts; no external dataset is redistributed.
-
+All generated records are synthetic. No real customer or confidential supply-chain data is included.
